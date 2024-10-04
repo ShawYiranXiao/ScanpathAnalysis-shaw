@@ -1,16 +1,14 @@
 
+
+# Run viewer app
+
 ```bash
 cd dataset_visualizers
 streamlit run deepgazedemo.py
 ```
 
 
-## Examples
-
-Below you can see some example uses of the models. For more details, check out [Examples.ipynb]
-
-
-### DeepGaze III
+## DeepGaze III Examples
 
 DeepGaze III is a scanpath model, i.e., the model prediction depends not only on the viewed image, but also on where the observer fixated previously. This is how to use DeepGaze III:
 
