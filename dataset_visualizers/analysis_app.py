@@ -1,3 +1,4 @@
+import sys; sys.path.insert(0, "..")
 import streamlit as st
 import os
 import numpy as np
@@ -7,6 +8,11 @@ from PIL import Image
 import scipy.io
 import base64
 from io import BytesIO
+import torch
+import torch.nn as nn
+import deepgaze_pytorch  # Make sure you have the DeepGazeIII PyTorch package installed
+from scipy.ndimage import zoom
+from scipy.special import logsumexp
 
 # Function to convert a PIL image to base64 string
 def pil_to_base64(img):
@@ -365,3 +371,97 @@ if compute_fixations and compute_fixation_crops:
 
     # Show the new plot with cropped regions
     st.pyplot(fig2)
+
+
+
+@st.cache_resource
+def load_deepgaze_model(device='cpu'):
+    """Load and cache the DeepGazeIII model."""
+    model = deepgaze_pytorch.DeepGazeIII(pretrained=True).to(device)
+    centerbias_template = np.load('../centerbias_mit1003.npy')
+        
+    return model, centerbias_template
+
+
+# Step 1: Select a subject for DeepGazeIII prediction from the sidebar
+deepgaze_subject = st.sidebar.selectbox('Select a Subject for DeepGazeIII Prediction', selected_subjects)
+
+# Check if CUDA is available for GPU acceleration, or use CPU
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+# Load the pre-trained DeepGazeIII model
+model, centerbias_template = load_deepgaze_model(DEVICE)
+
+
+# Step 2: Display the selected image and DeepGazeIII visualization if applicable
+if os.path.exists(image_path) and deepgaze_subject:
+    # Ensure the image is in the correct format with 3 channels (RGB)
+    img = mpimg.imread(image_path)
+    if img.shape[-1] == 4:  # Drop alpha channel if present
+        img = img[:, :, :3]
+
+    # Load and extract fixation data for the selected DeepGaze subject
+    deepgaze_data_path = os.path.join(data_folder, deepgaze_subject, f'{selected_image.split(".")[0]}.mat')
+    if os.path.exists(deepgaze_data_path):
+        deepgaze_data = scipy.io.loadmat(deepgaze_data_path)
+        try:
+            # Extract the scanpath data
+            data_array = deepgaze_data[selected_image.split('.')[0]][0][0]
+            deepgaze_points = data_array[data_array.dtype.names.index('DATA')][0][0][2]
+        except IndexError:
+            deepgaze_points = np.empty((0, 2))  # Use an empty array if IndexError occurs
+
+        # Filter and extract fixation points
+        filtered_points = deepgaze_points[(deepgaze_points[:, 0] >= 0) & (deepgaze_points[:, 1] >= 0)]
+        x, y = filtered_points[:, 0], filtered_points[:, 1]
+        
+        # Use `get_fixation` to obtain the fixation points for DeepGazeIII prediction
+        fixation_sections, deepgaze_x, deepgaze_y = get_fixation(x, y, time_interval)
+
+        # Slider for selecting the starting fixation index for DeepGazeIII prediction
+        fixation_start_idx = st.sidebar.slider('Select Starting Fixation Index for DeepGazeIII', 
+                                               min_value=0, 
+                                               max_value=max(0, len(deepgaze_x) - 4), 
+                                               value=0, 
+                                               step=1)
+
+        # Convert the image into a tensor format
+        image_tensor = torch.tensor([img.transpose(2, 0, 1)]).float().to(DEVICE)
+
+        # Load the centerbias template and adjust it to the image dimensions
+        centerbias = zoom(centerbias_template, (img.shape[0] / centerbias_template.shape[0], 
+                                                img.shape[1] / centerbias_template.shape[1]), 
+                                                order=0, mode='nearest')
+        centerbias -= logsumexp(centerbias)
+        centerbias_tensor = torch.tensor([centerbias]).float().to(DEVICE)
+
+        # Use a range of fixations starting from the selected index
+        x_hist_tensor = torch.tensor([deepgaze_x[fixation_start_idx:fixation_start_idx + 4]]).float().to(DEVICE)
+        y_hist_tensor = torch.tensor([deepgaze_y[fixation_start_idx:fixation_start_idx + 4]]).float().to(DEVICE)
+
+        # Perform the prediction using the selected fixations
+        with torch.no_grad():
+            log_density_prediction = model(image_tensor, centerbias_tensor, x_hist_tensor, y_hist_tensor)
+
+        # Step 3: Create a new figure for DeepGazeIII visualization
+        fig3, axs = plt.subplots(nrows=1, ncols=2, figsize=(14, 6))
+
+        # Original Image with Fixations
+        axs[0].imshow(img)
+        axs[0].plot(deepgaze_x[0:fixation_start_idx + 4], deepgaze_y[0:fixation_start_idx + 4], 'o-', color='red')
+        axs[0].scatter(deepgaze_x[fixation_start_idx + 3], deepgaze_y[fixation_start_idx + 3], 100, color='yellow')
+        axs[0].set_title('Fixation Scanpath')
+        axs[0].set_axis_off()
+
+        # Predicted Heatmap
+        predicted_heatmap = log_density_prediction.detach().cpu().numpy()[0, 0]
+        axs[1].imshow(img, alpha=0.5)
+        heatmap = axs[1].imshow(predicted_heatmap, cmap='jet', alpha=0.6)
+        axs[1].plot(deepgaze_x[0:fixation_start_idx + 4], deepgaze_y[0:fixation_start_idx + 4], 'o-', color='red')
+        axs[1].scatter(deepgaze_x[fixation_start_idx + 3], deepgaze_y[fixation_start_idx + 3], 100, color='yellow')
+        axs[1].set_title('DeepGazeIII Predicted Heatmap')
+        axs[1].set_axis_off()
+        fig3.colorbar(heatmap, ax=axs[1])
+
+        # Display the DeepGazeIII prediction using Streamlit
+        st.pyplot(fig3)
