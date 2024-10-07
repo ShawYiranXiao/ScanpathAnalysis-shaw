@@ -427,19 +427,20 @@ if os.path.exists(image_path) and deepgaze_subject:
         img = img[:, :, :3]
 
     # Load and extract fixation data for the selected DeepGaze subject
-    deepgaze_data_path = os.path.join(data_folder, deepgaze_subject, f'{selected_image.split(".")[0]}.mat')
+    deepgaze_data_path = os.path.join(data_folder, deepgaze_subject, f'{selected_image.split(".")[0]}.{dataset_config['Data Suffix']}')
+    print(deepgaze_data_path)
     if os.path.exists(deepgaze_data_path):
-        deepgaze_data = scipy.io.loadmat(deepgaze_data_path)
-        try:
-            # Extract the scanpath data
-            data_array = deepgaze_data[selected_image.split('.')[0]][0][0]
-            deepgaze_points = data_array[data_array.dtype.names.index('DATA')][0][0][2]
-        except IndexError:
-            deepgaze_points = np.empty((0, 2))  # Use an empty array if IndexError occurs
+        x, y = data_loader(deepgaze_data_path, image_path)
+        # try:
+        #     # Extract the scanpath data
+        #     data_array = deepgaze_data[selected_image.split('.')[0]][0][0]
+        #     deepgaze_points = data_array[data_array.dtype.names.index('DATA')][0][0][2]
+        # except IndexError:
+        #     deepgaze_points = np.empty((0, 2))  # Use an empty array if IndexError occurs
 
-        # Filter and extract fixation points
-        filtered_points = deepgaze_points[(deepgaze_points[:, 0] >= 0) & (deepgaze_points[:, 1] >= 0)]
-        x, y = filtered_points[:, 0], filtered_points[:, 1]
+        # # Filter and extract fixation points
+        # filtered_points = deepgaze_points[(deepgaze_points[:, 0] >= 0) & (deepgaze_points[:, 1] >= 0)]
+        # x, y = filtered_points[:, 0], filtered_points[:, 1]
         
         # Use `get_fixation` to obtain the fixation points for DeepGazeIII prediction
         fixation_sections, deepgaze_x, deepgaze_y = get_fixation(x, y, time_interval)
