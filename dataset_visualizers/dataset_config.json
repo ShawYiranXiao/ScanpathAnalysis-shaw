@@ -1,0 +1,20 @@
+{
+    "datasets": {
+        "MIT1003": {
+            "Sample Rate": 240,
+            "Stimulus Suffix": "jpeg",
+            "Data Suffix": "mat",
+            "Data Loader": "preprocess_mit1003",
+            "Window Width": 1024,
+            "Window Height": 768
+        },
+        "EOYS_images": {
+            "Sample Rate": 38.5,
+            "Stimulus Suffix": "jpg",
+            "Data Suffix": "csv",
+            "Data Loader": "preprocess_eoys",
+            "Window Width": 1920,
+            "Window Height": 1080
+        }
+    }
+}

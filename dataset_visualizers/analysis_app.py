@@ -13,6 +13,8 @@ import torch.nn as nn
 import deepgaze_pytorch  # Make sure you have the DeepGazeIII PyTorch package installed
 from scipy.ndimage import zoom
 from scipy.special import logsumexp
+from helper_loaders import *
+import json
 
 # Function to convert a PIL image to base64 string
 def pil_to_base64(img):
@@ -24,11 +26,10 @@ def pil_to_base64(img):
 # Set the paths for the stimuli, data, and affiliated image folders
 base_folder = '../Datasets/'
 
-# Parameters for fixation detection
-time_interval = 1 / 240  # 240 Hz sampling rate
-velocity_threshold = 1000  # I-VT velocity threshold (pixels/second)
-dispersion_threshold = 25  # I-DT spatial dispersion threshold (pixels)
-min_fixation_duration = 0.1  # Minimum fixation duration (seconds)
+dataset_configs = ""
+with open('dataset_config.json', 'r') as file:
+    dataset_configs = json.load(file)
+
 # Function to calculate fixation points using different algorithms
 def get_fixation(x, y, time_interval, algorithm_mode=0, velocity_threshold=1000, dispersion_threshold=25, min_fixation_duration=0.1):
     def calculate_velocity(x, y, time_interval):
@@ -121,6 +122,19 @@ selected_dataset = st.sidebar.selectbox("Dataset", datasets)
 stimuli_folder = os.path.join(base_folder, selected_dataset, "ALLSTIMULI")
 data_folder = os.path.join(base_folder, selected_dataset, "DATA")
 fixation_folder = os.path.join(base_folder, selected_dataset, 'ALLFIXATIONMAPS')
+
+
+dataset_config = dataset_configs['datasets'][selected_dataset]
+
+print(dataset_config)
+
+# Parameters for fixation detection
+sample_rate = dataset_config['Sample Rate']
+time_interval = 1 / sample_rate  # 240 Hz sampling rate
+velocity_threshold = 1000  # I-VT velocity threshold (pixels/second)
+dispersion_threshold = 25  # I-DT spatial dispersion threshold (pixels)
+min_fixation_duration = 0.1  # Minimum fixation duration (seconds)
+
 
 # Load image paths
 image_files = load_image_paths(stimuli_folder)
@@ -263,23 +277,15 @@ img = mpimg.imread(image_path)
 # Step 1: Calculate fixation data for all selected subjects (if enabled)
 fixations_data = {}  # Store computed fixations for each subject
 max_fixation_count = 0
+data_loader = data_loaders[dataset_config['Data Loader']]
+
+# print(data_loader)
 
 for subject in selected_subjects:
-    data_path = os.path.join(data_folder, subject, f'{selected_image.split(".")[0]}.mat')
+    data_path = os.path.join(data_folder, subject, f'{selected_image.split(".")[0]}.{dataset_config['Data Suffix']}')
     if os.path.exists(data_path):
-        subject_data = scipy.io.loadmat(data_path)
-        try:
-            # Extract and filter the fixation data
-            data_array = subject_data[selected_image.split('.')[0]][0][0]
-            points = data_array[data_array.dtype.names.index('DATA')][0][0][2] if 'DATA' in data_array.dtype.names else -1
-        except IndexError:
-            st.warning(f"Index error while accessing {subject} scanpath data. Skipping this entry.")
-            points = np.empty((0, 2))  # Fallback for missing data
-
-        # Extract x, y coordinates and filter valid points
-        filtered_points = points[(points[:, 0] >= 0) & (points[:, 1] >= 0)]
-        x, y = filtered_points[:, 0], filtered_points[:, 1]
-
+        x, y = data_loader(data_path, image_path)
+        
         # Calculate fixations if enabled
         if compute_fixations:
             fixation_sections, x, y = get_fixation(x, y, time_interval, algorithm_mode=algorithm_mode_index,
@@ -295,6 +301,26 @@ for subject in selected_subjects:
 
 # Step 2: Create the main visualization figure with scanpaths and optional fixation overlays
 fig, ax = plt.subplots(figsize=(12, 8))
+
+# Get the original dimensions
+orig_width, orig_height = img.shape[:2][::-1]
+
+# Calculate the scaling factor to fit within the specified max dimensions
+width_ratio = dataset_config['Window Width'] / orig_width
+height_ratio = dataset_config['Window Height'] / orig_height
+scaling_factor = min(width_ratio, height_ratio)
+
+# Calculate new dimensions while preserving the aspect ratio
+new_width = int(orig_width * scaling_factor)
+new_height = int(orig_height * scaling_factor)
+
+# Resize the image if it's larger than the specified dimensions
+if scaling_factor < 1:
+    # Use np.interp for resizing
+    img = np.array(Image.fromarray((img * 255).astype(np.uint8)).resize((new_width, new_height)))
+else:
+    img = img  # No resizing needed if the image fits within the max dimensions
+
 ax.imshow(img)  # Display the main stimulus image
 
 fixmap_path = os.path.join(fixation_folder, f'{selected_image.split(".")[0]}_fixMap.jpg')
@@ -310,7 +336,7 @@ for idx, subject in enumerate(selected_subjects):
     ax.plot(x, y, marker='o', color=colors(idx), linewidth=1, markersize=4, label=f'Subject {subject}')
 
 # Show legend and main image plot
-ax.legend(loc='upper right')
+# ax.legend(loc='upper right')
 st.pyplot(fig)  # Render the main figure with scanpaths
 
 if compute_fixations and compute_fixation_crops:
