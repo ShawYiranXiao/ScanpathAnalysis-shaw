@@ -11,8 +11,7 @@ import matplotlib.pyplot as plt
 import os
 import deepgaze_pytorch
 
-DEVICE = 'cpu'
-
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Initialize the model
 model = deepgaze_pytorch.DeepGazeIII(pretrained=True).to(DEVICE)
 
@@ -88,7 +87,7 @@ if selected_image_file:
         fixation_history_y = np.array([p[1] for p in st.session_state.points[-4:]])
 
         # Convert the inputs to tensors
-        DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
         image_tensor = torch.tensor([image_np.transpose(2, 0, 1)]).float().to(DEVICE)
         centerbias_tensor = torch.tensor([centerbias]).float().to(DEVICE)
         x_hist_tensor = torch.tensor([fixation_history_x]).float().to(DEVICE)
