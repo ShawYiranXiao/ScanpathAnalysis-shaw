@@ -282,7 +282,7 @@ data_loader = data_loaders[dataset_config['Data Loader']]
 # print(data_loader)
 
 for subject in selected_subjects:
-    data_path = os.path.join(data_folder, subject, f'{selected_image.split(".")[0]}.{dataset_config['Data Suffix']}')
+    data_path = os.path.join(data_folder, subject, f'{selected_image.split(".")[0]}.{dataset_config["Data Suffix"]}')
     if os.path.exists(data_path):
         x, y = data_loader(data_path, image_path)
         
@@ -427,7 +427,7 @@ if os.path.exists(image_path) and deepgaze_subject:
         img = img[:, :, :3]
 
     # Load and extract fixation data for the selected DeepGaze subject
-    deepgaze_data_path = os.path.join(data_folder, deepgaze_subject, f'{selected_image.split(".")[0]}.{dataset_config['Data Suffix']}')
+    deepgaze_data_path = os.path.join(data_folder, deepgaze_subject, f'{selected_image.split(".")[0]}.{dataset_config["Data Suffix"]}')
     print(deepgaze_data_path)
     if os.path.exists(deepgaze_data_path):
         x, y = data_loader(deepgaze_data_path, image_path)
