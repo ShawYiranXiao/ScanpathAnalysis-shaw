@@ -287,7 +287,8 @@ if st.sidebar.button("select all subjects"):
     st.rerun()
 
 # 显示选中的 subjects
-st.write(f"**Selected Subjects:** {" | ".join([f"`{subject[:4]}`" for subject in st.session_state.selected_subjects_list])}")
+combined_subjects_string = " | ".join([f"`{subject[:4]}`" for subject in st.session_state.selected_subjects_list])
+st.write(f"**Selected Subjects:** {combined_subjects_string}")
 
 # Options for visualization
 
@@ -526,23 +527,23 @@ if st.session_state.computation_options['compute_deepgaze']:
                 log_density_prediction = model(image_tensor, centerbias_tensor, x_hist_tensor, y_hist_tensor)
 
             # Step 3: Create a new figure for DeepGazeIII visualization
-            fig3, axs = plt.subplots(nrows=2, ncols=1, figsize=(14, 18))
+            fig3, axs = plt.subplots(nrows=1, ncols=2, figsize=(14, 6))
             
             # Original Image with Fixations
-            axs[1].imshow(img)
-            axs[1].plot(deepgaze_x[0:fixation_start_idx + 4], deepgaze_y[0:fixation_start_idx + 4], 'o-', color=colors_dict[deepgaze_subject])
-            axs[1].scatter(deepgaze_x[fixation_start_idx + 3], deepgaze_y[fixation_start_idx + 3], 100, color='yellow')
-            axs[1].set_title('Fixation Scanpath')
-            axs[1].set_axis_off()
+            axs[0].imshow(img)
+            axs[0].plot(deepgaze_x[0:fixation_start_idx + 4], deepgaze_y[0:fixation_start_idx + 4], 'o-', color=colors_dict[deepgaze_subject])
+            axs[0].scatter(deepgaze_x[fixation_start_idx + 3], deepgaze_y[fixation_start_idx + 3], 100, color='yellow')
+            axs[0].set_title('Fixation Scanpath')
+            axs[0].set_axis_off()
 
             # Predicted Heatmap
             predicted_heatmap = log_density_prediction.detach().cpu().numpy()[0, 0]
-            axs[0].imshow(img, alpha=0.5)
-            heatmap = axs[0].imshow(predicted_heatmap, cmap='jet', alpha=0.6)
-            axs[0].plot(deepgaze_x[fixation_start_idx:fixation_start_idx + 4], deepgaze_y[fixation_start_idx:fixation_start_idx + 4], 'o-', color='red')
-            axs[0].scatter(deepgaze_x[fixation_start_idx + 3], deepgaze_y[fixation_start_idx + 3], 100, color='yellow')
-            axs[0].set_title('DeepGazeIII Predicted Heatmap')
-            axs[0].set_axis_off()
+            axs[1].imshow(img, alpha=0.5)
+            heatmap = axs[1].imshow(predicted_heatmap, cmap='jet', alpha=0.6)
+            axs[1].plot(deepgaze_x[fixation_start_idx:fixation_start_idx + 4], deepgaze_y[fixation_start_idx:fixation_start_idx + 4], 'o-', color='red')
+            axs[1].scatter(deepgaze_x[fixation_start_idx + 3], deepgaze_y[fixation_start_idx + 3], 100, color='yellow')
+            axs[1].set_title('DeepGazeIII Predicted Heatmap')
+            axs[1].set_axis_off()
             # fig3.colorbar(heatmap, ax=axs[1])
             
             # Display the DeepGazeIII prediction using Streamlit
