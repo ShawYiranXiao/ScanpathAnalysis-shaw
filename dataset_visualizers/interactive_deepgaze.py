@@ -12,6 +12,7 @@ import os
 import deepgaze_pytorch
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # Initialize the model
 model = deepgaze_pytorch.DeepGazeIII(pretrained=True).to(DEVICE)
 
