@@ -1,3 +1,8 @@
+# Run Batch Processor 
+
+```bash
+python -m dataset_visualizers.process_fixations --dir "/path/to/your/images_jpeg" --output "./output"
+```
 
 
 # Run viewer app
