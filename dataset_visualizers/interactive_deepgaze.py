@@ -10,6 +10,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import os
 import deepgaze_pytorch
+import pandas as pd
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -25,6 +26,14 @@ image_files = [f for f in os.listdir(image_folder) if f.endswith(('.jpg', '.jpeg
 
 # Create a dropdown menu with the image file names
 selected_image_file = st.selectbox("Select an Image", image_files)
+
+# 全局历史数据记录
+if "history_rows" not in st.session_state:
+    st.session_state.history_rows = []
+if "heatmaps" not in st.session_state:
+    st.session_state.heatmaps = []
+if "predicted_points" not in st.session_state:
+    st.session_state.predicted_points = []
 
 # Load the selected image using PIL
 if selected_image_file:
@@ -71,24 +80,24 @@ if selected_image_file:
         key="canvas",
     )
 
-    # Session state to store points
-    # if "points" not in st.session_state:
-    #     st.session_state.points = []
-    st.session_state.points = []
-    # Collect points from the canvas
+    # 从 canvas 实时读取点坐标（不使用 session state 累加）
+    clicked_points = []
     if canvas_result.json_data is not None:
         for obj in canvas_result.json_data["objects"]:
             if obj["type"] == "circle":
-                st.session_state.points.append((obj["left"]*3, obj["top"]*3))
+                clicked_points.append((obj["left"]*3, obj["top"]*3))
 
-    # Prepare model inputs if exactly four points are selected
-    if len(st.session_state.points) >= 4:
-        # Extract x and y coordinates
-        fixation_history_x = np.array([p[0] for p in st.session_state.points[-4:]])
-        fixation_history_y = np.array([p[1] for p in st.session_state.points[-4:]])
+    idx = len(st.session_state.predicted_points)
+
+    # Prepare model inputs if至少五个点
+    if len(clicked_points) >= idx + 5:
+        # Extract x and y coordinates from the 4-point history
+        history_points = clicked_points[idx:idx+4]
+        fixation_history_x = np.array([p[0] for p in history_points])
+        fixation_history_y = np.array([p[1] for p in history_points])
+        real_point = clicked_points[idx + 4]
 
         # Convert the inputs to tensors
-        
         image_tensor = torch.tensor([image_np.transpose(2, 0, 1)]).float().to(DEVICE)
         centerbias_tensor = torch.tensor([centerbias]).float().to(DEVICE)
         x_hist_tensor = torch.tensor([fixation_history_x]).float().to(DEVICE)
@@ -97,23 +106,79 @@ if selected_image_file:
         # Generate the log density prediction
         log_density_prediction = model(image_tensor, centerbias_tensor, x_hist_tensor, y_hist_tensor)
         predicted_heatmap = log_density_prediction.detach().cpu().numpy()[0, 0]
-        
+
+        # 找到预测点
+        pred_y, pred_x = np.unravel_index(np.argmax(predicted_heatmap), predicted_heatmap.shape)
+        pred_point = (float(pred_x), float(pred_y))
+
+        # 记录历史、预测、真实点
+        row = {
+            "Index": idx,
+            "Predicted_x": pred_point[0],
+            "Predicted_y": pred_point[1],
+            "Real_x": real_point[0],
+            "Real_y": real_point[1],
+            "Image_Width": image_width,
+            "Image_Height": image_height
+        }
+
+        # Add historical points P1~P4 as flat columns
+        for i, (hx, hy) in enumerate(history_points):
+            row[f"H{i+1}_x"] = hx
+            row[f"H{i+1}_y"] = hy
+
+        st.session_state.history_rows.append(row)
+        st.session_state.heatmaps.append(predicted_heatmap)
+        st.session_state.predicted_points.append(pred_point)
+
         f, axs = plt.subplots(nrows=2, ncols=1, figsize=(10, 10))
         axs[1].imshow(image)
-        history_points = np.array(st.session_state.points)
-        print(history_points)
-        print(history_points[:,0], history_points[:,1])
-        axs[1].plot(history_points[:, 0], history_points[:,1], 'o-', color='red')
-        axs[1].scatter(fixation_history_x[-1], fixation_history_y[-1], 10, color='yellow', zorder=100)
+        points_to_plot = clicked_points[idx:idx+5]
+        history_points_np = np.array(points_to_plot)
+        print(history_points_np)
+        print(history_points_np[:,0], history_points_np[:,1])
+        axs[1].plot(history_points_np[:, 0], history_points_np[:,1], 'o-', color='red')
+        axs[1].scatter(real_point[0], real_point[1], 10, color='yellow', zorder=100)
         axs[1].set_axis_off()
         axs[0].imshow(image_np, alpha=0.5)
         heatmap = axs[0].imshow(predicted_heatmap, cmap='jet', alpha=0.6) 
-        # axs[0].matshow(log_density_prediction.detach().cpu().numpy()[0, 0])  # first image in batch, first (and only) channel
         axs[0].plot(fixation_history_x, fixation_history_y, 'o-', color='red')
-        axs[0].scatter(fixation_history_x[-1], fixation_history_y[-1], 10, color='yellow', zorder=100)
+        axs[0].scatter(pred_point[0], pred_point[1], 10, color='blue', zorder=100)
+        axs[0].scatter(real_point[0], real_point[1], 10, color='yellow', zorder=101)
         axs[0].set_axis_off()
 
         st.pyplot(f)  # Display the plot in Streamlit
 
     else:
-        st.warning("Add more points until you have exactly four.")
+        st.warning("Add more points until you have at least 5 to start generating predictions.")
+
+# 导出函数定义
+def export_csv_files():
+    rows = st.session_state.get("history_rows", [])
+    heatmaps = st.session_state.get("heatmaps", [])
+    if not rows:
+        st.warning("No data to export.")
+        return
+
+    # 直接将结构化 row 数据写入 DataFrame
+    df = pd.DataFrame(rows)
+
+    columns = [
+        "Index", "Predicted_x", "Predicted_y", "Real_x", "Real_y",
+        "Image_Width", "Image_Height",
+        "H1_x", "H1_y", "H2_x", "H2_y", "H3_x", "H3_y", "H4_x", "H4_y"
+    ]
+    df = pd.DataFrame(rows, columns=columns)
+    
+    df.to_csv("predictions_log.csv", index=False)
+    st.success("Saved predictions_log.csv")
+
+    # 导出每个 heatmap 为 CSV 文件
+    for i, heatmap in enumerate(heatmaps):
+        np.savetxt(f"heatmap_{i}.csv", heatmap, delimiter=",")
+    st.success("Saved all heatmaps as CSV.")
+
+
+# 导出按钮（始终显示在页面底部）
+if st.button("\U0001F4BE Export CSV files"):
+    export_csv_files()
